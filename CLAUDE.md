@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 已实现：
 - **第1章 短信登录**：`UserController` 的 `code`/`login`/`me`、`UserServiceImpl`（Redis token 登录）、`utils/LoginInterceptor`、`utils/RefreshTokenInterceptor`、`config/MvcConfig`
+- **第2章 商户查询缓存**：`utils/CacheClient`（封装 `queryWithPassThrough` / `queryWithMutex` / `queryWithLogicalExpire` / `setWithLogicalExpire`）、`ShopServiceImpl.queryById` 与 `update`（先改库再删缓存）、`ShopController` 改为走 service
 - `ShopController`（基础 CRUD、按类型/名称分页）、`ShopTypeController`、`UploadController`
 - `VoucherController` + `VoucherServiceImpl.addSeckillVoucher/queryVoucherOfShop`（含 `VoucherMapper.xml` 手写联表查询）
 - `BlogController` 的 `queryHotBlog`；`BlogController.saveBlog/likeBlog/queryMyBlog` 只做了最朴素的数据库更新（`liked = liked + 1`），没有点赞去重、没有 Feed 推送
@@ -16,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `UserController.logout` —— 讲义本身没有实现它，参考实现也保留为 TODO
 - `VoucherOrderController.seckillVoucher`（秒杀下单）
 - `FollowController`、`BlogCommentsController` —— 空类
-- `ShopServiceImpl`、`BlogServiceImpl`、`FollowServiceImpl`、`VoucherOrderServiceImpl` 等 —— 空壳，只继承 MP 的 `ServiceImpl`
+- `BlogServiceImpl`、`FollowServiceImpl`、`VoucherOrderServiceImpl` 等 —— 空壳，只继承 MP 的 `ServiceImpl`
 
 **登录链路（第1章已补齐）**：`UserHolder` 由拦截器写入。`RefreshTokenInterceptor` 注册在 `order(0)` 拦截 `/**`，从请求头 `authorization` 取 token → 查 Redis hash → `UserHolder.saveUser` → 刷新 TTL，并在 `afterCompletion` 调 `removeUser()`；`LoginInterceptor` 注册在 `order(1)`，只判断 ThreadLocal 有无用户，无则返回 401。**新增需要登录态的接口，务必确认它没有被 `MvcConfig.excludePathPatterns` 放行，否则拿不到用户。**
 
