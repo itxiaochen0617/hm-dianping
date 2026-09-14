@@ -4,9 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态（先读这一段）
 
-这是《黑马点评》实战课程的**初始骨架工程**，不是完成品。大量业务逻辑是 `// TODO` 桩，默认返回 `Result.fail("功能未完成")`。改动前先确认你面对的是桩代码还是已实现代码。
-
-已实现：
+这是《黑马点评》实战课程的**完整实现**，已按讲义 12 个章节逐章补齐、逐章提交（`git log` 里一章一个 commit）。原始骨架里的 `// TODO 功能未完成` 桩已基本消除。各章落地位置：
 - **第1章 短信登录**：`UserController` 的 `code`/`login`/`me`、`UserServiceImpl`（Redis token 登录）、`utils/LoginInterceptor`、`utils/RefreshTokenInterceptor`、`config/MvcConfig`
 - **第2章 商户查询缓存**：`utils/CacheClient`（封装 `queryWithPassThrough` / `queryWithMutex` / `queryWithLogicalExpire` / `setWithLogicalExpire`）、`ShopServiceImpl.queryById` 与 `update`（先改库再删缓存）、`ShopController` 改为走 service
 - **第3章 优惠卷秒杀**：`utils/RedisIdWorker`（时间戳左移 32 位 + Redis 日自增序列号）、`VoucherServiceImpl.addSeckillVoucher` 额外把库存写入 `SECKILL_STOCK_KEY`、`VoucherOrderServiceImpl.seckillVoucher`（校验时间与库存 → `synchronized(userId.intern())` → 代理调用 `createVoucherOrder`）、`HmDianPingApplication` 加了 `@EnableAspectJAutoProxy(exposeProxy = true)`
@@ -19,15 +17,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **第10章 附近商户**：`ShopServiceImpl.queryShopByType` 支持按 `x`/`y` 坐标走 Redis GEO（`GEOSEARCH` + `includeDistance` + 内存分页），无坐标时回退到数据库分页；测试类新增 `loadShopData()` 按 `typeId` 分组把店铺灌进 `SHOP_GEO_KEY`
 - **第11章 用户签到**：`UserServiceImpl.sign()` 用 `SETBIT` 按 `sign:{userId}:yyyyMM` 逐日置位、`signCount()` 用 `BITFIELD GET u{dayOfMonth} 0` 取出本月位图后靠 `& 1` + 右移数连续 1，新增 `/user/sign`、`/user/sign/count`
 
-**Stream 消费组必须先手工创建**：`VoucherOrderServiceImpl` 只做 `XREADGROUP`，不做 `XGROUP CREATE`。首次跑之前需要在 redis-cli 执行 `XGROUP CREATE stream.orders g1 0 MKSTREAM`，否则消费线程会一直报 `NOGROUP No such key`。
-- `ShopController`（基础 CRUD、按类型/名称分页）、`ShopTypeController`、`UploadController`
-- `VoucherController` + `VoucherServiceImpl.addSeckillVoucher/queryVoucherOfShop`（含 `VoucherMapper.xml` 手写联表查询）
-- `BlogController` 的 `queryHotBlog`；`BlogController.saveBlog/likeBlog/queryMyBlog` 只做了最朴素的数据库更新（`liked = liked + 1`），没有点赞去重、没有 Feed 推送
+- **第12章 UV统计**：测试类 `testHyperLogLog()` 向 HyperLogLog 灌 100 万条数据验证误差
 
-未实现（纯桩）：
-- `UserController.logout` —— 讲义本身没有实现它，参考实现也保留为 TODO
-- `FollowController`、`BlogCommentsController` —— 空类
-- `BlogServiceImpl`、`FollowServiceImpl` 等 —— 空壳，只继承 MP 的 `ServiceImpl`
+**Stream 消费组必须先手工创建**：`VoucherOrderServiceImpl` 只做 `XREADGROUP`，不做 `XGROUP CREATE`。首次跑之前需要在 redis-cli 执行 `XGROUP CREATE stream.orders g1 0 MKSTREAM`，否则消费线程会一直报 `NOGROUP No such key`。
+
+**唯一剩下的桩**：`UserController.logout` —— 讲义从头到尾没有实现它，参考实现也保留为 TODO。`BlogCommentsController` / `BlogCommentsServiceImpl` 是空壳（讲义未涉及评论功能）。`utils/SimpleRedisLock` 与 `utils/ILock` 在第5章被 Redisson 取代后已无人调用，作为第4章的产物保留。
 
 **`AopContext.currentProxy()` 的前提**：项目里所有靠「同类内部调用走代理」来让 `@Transactional` 生效的写法，都依赖启动类上的 `@EnableAspectJAutoProxy(exposeProxy = true)`。删掉这个注解会让 `currentProxy()` 直接抛 `IllegalStateException`。
 
