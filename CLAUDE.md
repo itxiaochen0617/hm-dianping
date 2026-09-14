@@ -11,6 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **第2章 商户查询缓存**：`utils/CacheClient`（封装 `queryWithPassThrough` / `queryWithMutex` / `queryWithLogicalExpire` / `setWithLogicalExpire`）、`ShopServiceImpl.queryById` 与 `update`（先改库再删缓存）、`ShopController` 改为走 service
 - **第3章 优惠卷秒杀**：`utils/RedisIdWorker`（时间戳左移 32 位 + Redis 日自增序列号）、`VoucherServiceImpl.addSeckillVoucher` 额外把库存写入 `SECKILL_STOCK_KEY`、`VoucherOrderServiceImpl.seckillVoucher`（校验时间与库存 → `synchronized(userId.intern())` → 代理调用 `createVoucherOrder`）、`HmDianPingApplication` 加了 `@EnableAspectJAutoProxy(exposeProxy = true)`
 - **第4章 分布式锁**：`utils/ILock` + `utils/SimpleRedisLock`（`setIfAbsent` 加锁、value 存 `UUID-线程id` 标示、`resources/unlock.lua` 保证「比标示 + 删锁」原子性）、`VoucherOrderServiceImpl` 的 `synchronized` 换成 `SimpleRedisLock`
+- **第5章 Redisson**：`pom.xml` 新增 `org.redisson:redisson:3.13.6`、`config/RedissonConfig`、`VoucherOrderServiceImpl` 改用 `RLock`（`SimpleRedisLock` 保留在 `utils` 但已无人使用）
 - `ShopController`（基础 CRUD、按类型/名称分页）、`ShopTypeController`、`UploadController`
 - `VoucherController` + `VoucherServiceImpl.addSeckillVoucher/queryVoucherOfShop`（含 `VoucherMapper.xml` 手写联表查询）
 - `BlogController` 的 `queryHotBlog`；`BlogController.saveBlog/likeBlog/queryMyBlog` 只做了最朴素的数据库更新（`liked = liked + 1`），没有点赞去重、没有 Feed 推送
@@ -43,6 +44,8 @@ mvn test -Dtest=HmDianPingApplicationTests#方法名   # 单个测试方法
 - 服务端口 `8081`；`com.hmdp` 包日志级别为 `debug`
 
 另有一处硬编码路径需要留意：`SystemConstants.IMAGE_UPLOAD_DIR` 指向 `D:\lesson\nginx-1.18.0\html\hmdp\imgs\`，`UploadController` 直接依赖它，路径不存在会导致上传失败。前端页面由该 nginx 静态目录托管，**前端代码不在本仓库内**。
+
+**`RedissonConfig` 的地址是写死的**（`redis://192.168.150.101:6379` + 密码 `123321`，与讲义一致，不读 `application.yaml`）。注意 `Redisson.create(config)` 在**容器启动时就会建连**，Redis 不可达会直接导致应用启动失败 —— 这与 `StringRedisTemplate` 的懒连接行为不同。换环境时这是第一个要改的地方。
 
 ## 技术栈
 
