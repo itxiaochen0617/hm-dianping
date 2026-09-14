@@ -15,6 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **第6章 秒杀优化**：`resources/seckill.lua`（原子完成「查库存 + 一人一单 + 扣库存 + 记录用户」）、`VoucherOrderServiceImpl` 改为 `@PostConstruct` 起单线程 + `ArrayBlockingQueue` 异步落库；`IVoucherOrderService` 收窄为只剩 `seckillVoucher`，`createVoucherOrder` 变成私有方法（**从线程池线程调用，脱离 Spring 事务上下文，所以它上面没有也不该有 `@Transactional`**）
 - **第7章 Redis消息队列**：`seckill.lua` 末尾追加 `XADD stream.orders`，`VoucherOrderServiceImpl` 的阻塞队列换成 Redis Stream 消费者组（`stream.orders` / `g1` / `c1`），新增 `handlePendingList()` 补偿未 ACK 的消息
 - **第8章 达人探店**：`BlogServiceImpl` 承载原 `BlogController` 里的大部分逻辑（`saveBlog` / `queryHotBlog` / `queryBlogById` / `likeBlog` / `queryBlogLikes` / `isBlogLiked` / `queryBlogUser`），控制器改为瘦转发；点赞用 `BLOG_LIKED_KEY` 的 **ZSet**（score = 点赞时间戳）实现去重 + 排行榜 `zrange 0 4`
+- **第9章 好友关注**：`FollowServiceImpl`（关注/取关同步维护 `follows:{userId}` Set、`followCommons` 用 `SINTER` 求共同关注）、`BlogServiceImpl.saveBlog` 写扩散推送笔记到粉丝 `FEED_KEY` ZSet、`queryBlogOfFollow` 滚动分页（`reverseRangeByScoreWithScores` + 返回 `ScrollResult`）；新增 `/blog/of/follow`、`/blog/of/user`、`/user/{id}`
 
 **Stream 消费组必须先手工创建**：`VoucherOrderServiceImpl` 只做 `XREADGROUP`，不做 `XGROUP CREATE`。首次跑之前需要在 redis-cli 执行 `XGROUP CREATE stream.orders g1 0 MKSTREAM`，否则消费线程会一直报 `NOGROUP No such key`。
 - `ShopController`（基础 CRUD、按类型/名称分页）、`ShopTypeController`、`UploadController`
@@ -87,6 +88,8 @@ Key 前缀与 TTL 统一定义在 `RedisConstants`，新增 key 请加到这里�
 | `USER_SIGN_KEY` | `sign:` | 签到 BitMap |
 
 注意 `seckill:order:{voucherId}` 这个「已下单用户」Set 的 key **只硬编码在 `seckill.lua` 里**，`RedisConstants` 中没有对应常量。
+
+同理，第9章的关注关系 Set 用的 `follows:{userId}` 也是**硬编码在 `FollowServiceImpl` 里的字符串**，没有进 `RedisConstants`。`FEED_KEY`（`feed:`）则有常量。
 
 `utils/RedisData`（`expireTime` + `data`）是为**逻辑过期**缓存方案预留的载体，目前无人使用。
 
