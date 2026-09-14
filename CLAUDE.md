@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **第1章 短信登录**：`UserController` 的 `code`/`login`/`me`、`UserServiceImpl`（Redis token 登录）、`utils/LoginInterceptor`、`utils/RefreshTokenInterceptor`、`config/MvcConfig`
 - **第2章 商户查询缓存**：`utils/CacheClient`（封装 `queryWithPassThrough` / `queryWithMutex` / `queryWithLogicalExpire` / `setWithLogicalExpire`）、`ShopServiceImpl.queryById` 与 `update`（先改库再删缓存）、`ShopController` 改为走 service
 - **第3章 优惠卷秒杀**：`utils/RedisIdWorker`（时间戳左移 32 位 + Redis 日自增序列号）、`VoucherServiceImpl.addSeckillVoucher` 额外把库存写入 `SECKILL_STOCK_KEY`、`VoucherOrderServiceImpl.seckillVoucher`（校验时间与库存 → `synchronized(userId.intern())` → 代理调用 `createVoucherOrder`）、`HmDianPingApplication` 加了 `@EnableAspectJAutoProxy(exposeProxy = true)`
+- **第4章 分布式锁**：`utils/ILock` + `utils/SimpleRedisLock`（`setIfAbsent` 加锁、value 存 `UUID-线程id` 标示、`resources/unlock.lua` 保证「比标示 + 删锁」原子性）、`VoucherOrderServiceImpl` 的 `synchronized` 换成 `SimpleRedisLock`
 - `ShopController`（基础 CRUD、按类型/名称分页）、`ShopTypeController`、`UploadController`
 - `VoucherController` + `VoucherServiceImpl.addSeckillVoucher/queryVoucherOfShop`（含 `VoucherMapper.xml` 手写联表查询）
 - `BlogController` 的 `queryHotBlog`；`BlogController.saveBlog/likeBlog/queryMyBlog` 只做了最朴素的数据库更新（`liked = liked + 1`），没有点赞去重、没有 Feed 推送
@@ -70,7 +71,7 @@ Key 前缀与 TTL 统一定义在 `RedisConstants`，新增 key 请加到这里�
 | `LOGIN_USER_KEY` / `LOGIN_USER_TTL` | `login:token:` / 36000 | 登录 token（**分钟**，即 25 天） |
 | `CACHE_SHOP_KEY` / `CACHE_SHOP_TTL` | `cache:shop:` / 30 | 商铺缓存 |
 | `CACHE_NULL_TTL` | 2 | 缓存空值防穿透 |
-| `LOCK_SHOP_KEY` / `LOCK_SHOP_TTL` | `lock:shop:` / 10 | 商铺缓存互斥锁 |
+| `LOCK_SHOP_KEY` / `LOCK_SHOP_TTL` | `lock:shop:` / 10 | 商铺缓存互斥锁（`CacheClient` 内部用） |
 | `SECKILL_STOCK_KEY` | `seckill:stock:` | 秒杀库存 |
 | `BLOG_LIKED_KEY` | `blog:liked:` | 点赞 Set |
 | `FEED_KEY` | `feed:` | 关注 Feed 收件箱 |
