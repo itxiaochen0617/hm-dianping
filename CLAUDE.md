@@ -16,6 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **第7章 Redis消息队列**：`seckill.lua` 末尾追加 `XADD stream.orders`，`VoucherOrderServiceImpl` 的阻塞队列换成 Redis Stream 消费者组（`stream.orders` / `g1` / `c1`），新增 `handlePendingList()` 补偿未 ACK 的消息
 - **第8章 达人探店**：`BlogServiceImpl` 承载原 `BlogController` 里的大部分逻辑（`saveBlog` / `queryHotBlog` / `queryBlogById` / `likeBlog` / `queryBlogLikes` / `isBlogLiked` / `queryBlogUser`），控制器改为瘦转发；点赞用 `BLOG_LIKED_KEY` 的 **ZSet**（score = 点赞时间戳）实现去重 + 排行榜 `zrange 0 4`
 - **第9章 好友关注**：`FollowServiceImpl`（关注/取关同步维护 `follows:{userId}` Set、`followCommons` 用 `SINTER` 求共同关注）、`BlogServiceImpl.saveBlog` 写扩散推送笔记到粉丝 `FEED_KEY` ZSet、`queryBlogOfFollow` 滚动分页（`reverseRangeByScoreWithScores` + 返回 `ScrollResult`）；新增 `/blog/of/follow`、`/blog/of/user`、`/user/{id}`
+- **第10章 附近商户**：`ShopServiceImpl.queryShopByType` 支持按 `x`/`y` 坐标走 Redis GEO（`GEOSEARCH` + `includeDistance` + 内存分页），无坐标时回退到数据库分页；测试类新增 `loadShopData()` 按 `typeId` 分组把店铺灌进 `SHOP_GEO_KEY`
 
 **Stream 消费组必须先手工创建**：`VoucherOrderServiceImpl` 只做 `XREADGROUP`，不做 `XGROUP CREATE`。首次跑之前需要在 redis-cli 执行 `XGROUP CREATE stream.orders g1 0 MKSTREAM`，否则消费线程会一直报 `NOGROUP No such key`。
 - `ShopController`（基础 CRUD、按类型/名称分页）、`ShopTypeController`、`UploadController`
@@ -55,7 +56,9 @@ mvn test -Dtest=HmDianPingApplicationTests#方法名   # 单个测试方法
 
 ## 技术栈
 
-Spring Boot 2.3.12 / Java 8 / Maven 单模块。MyBatis-Plus 3.4.3、MySQL Connector 5.1.47、spring-boot-starter-data-redis（Lettuce + commons-pool2）、Hutool 5.7.17、Lombok。
+Spring Boot 2.3.12 / Java 8 / Maven 单模块。MyBatis-Plus 3.4.3、MySQL Connector 5.1.47、spring-boot-starter-data-redis（Lettuce + commons-pool2）、Hutool 5.7.17、Redisson 3.13.6、Lombok。
+
+**`spring-data-redis` 被刻意升级过**（第10章引入）：`spring-boot-starter-data-redis` 里排除了自带的 `spring-data-redis` 和 `lettuce-core`，改用 `spring-data-redis:2.6.2` + `lettuce-core:6.1.6.RELEASE`。原因是 2.3.x 自带的 2.3.9 不支持 Redis 6.2 的 `GEOSEARCH`（`org.springframework.data.redis.domain.geo.GeoReference` 这个类在 2.3.9 里根本不存在）。**改 pom 时不要"顺手清理"这两个版本号**，否则 `ShopServiceImpl.queryShopByType` 直接编译不过。
 
 ## 代码结构约定
 
