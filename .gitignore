@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local config (contains DB/Redis credentials) ###
+src/main/resources/application.yaml

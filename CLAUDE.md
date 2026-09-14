@@ -79,4 +79,4 @@ Key 前缀与 TTL 统一定义在 `RedisConstants`，新增 key 请加到这里�
 
 `tb_user`、`tb_user_info`、`tb_shop`、`tb_shop_type`、`tb_voucher`、`tb_seckill_voucher`、`tb_voucher_order`、`tb_blog`、`tb_blog_comments`、`tb_follow`。秒杀券是 `tb_voucher` + `tb_seckill_voucher` 两张表（后者存 stock/begin_time/end_time），`VoucherMapper.xml` 已写好在 `queryVoucherOfShop` 里做左连接。
 
-SQL 初始化脚本不在本仓库，需从课程资料单独导入。
+数据库初始化脚本在 `src/main/resources/db/hmdp.sql`（Navicat 导出的完整建表语句 + 初始数据）。
