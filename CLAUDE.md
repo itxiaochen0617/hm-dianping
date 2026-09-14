@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态（先读这一段）
 
-这是《黑马点评》实战课程的**完整实现**，已按讲义 12 个章节逐章补齐、逐章提交（`git log` 里一章一个 commit）。原始骨架里的 `// TODO 功能未完成` 桩已基本消除。各章落地位置：
+这是《黑马点评》实战课程的**完整实现**，已按讲义 12 个章节逐章补齐、逐章提交（`git log` 里一章一个 commit）。原始骨架里的 `// TODO 功能未完成` 桩已**全部消除**。各章落地位置：
 - **第1章 短信登录**：`UserController` 的 `code`/`login`/`me`、`UserServiceImpl`（Redis token 登录）、`utils/LoginInterceptor`、`utils/RefreshTokenInterceptor`、`config/MvcConfig`
 - **第2章 商户查询缓存**：`utils/CacheClient`（封装 `queryWithPassThrough` / `queryWithMutex` / `queryWithLogicalExpire` / `setWithLogicalExpire`）、`ShopServiceImpl.queryById` 与 `update`（先改库再删缓存）、`ShopController` 改为走 service
 - **第3章 优惠卷秒杀**：`utils/RedisIdWorker`（时间戳左移 32 位 + Redis 日自增序列号）、`VoucherServiceImpl.addSeckillVoucher` 额外把库存写入 `SECKILL_STOCK_KEY`、`VoucherOrderServiceImpl.seckillVoucher`（校验时间与库存 → `synchronized(userId.intern())` → 代理调用 `createVoucherOrder`）、`HmDianPingApplication` 加了 `@EnableAspectJAutoProxy(exposeProxy = true)`
@@ -21,7 +21,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Stream 消费组必须先手工创建**：`VoucherOrderServiceImpl` 只做 `XREADGROUP`，不做 `XGROUP CREATE`。首次跑之前需要在 redis-cli 执行 `XGROUP CREATE stream.orders g1 0 MKSTREAM`，否则消费线程会一直报 `NOGROUP No such key`。
 
-**唯一剩下的桩**：`UserController.logout` —— 讲义从头到尾没有实现它，参考实现也保留为 TODO。`BlogCommentsController` / `BlogCommentsServiceImpl` 是空壳（讲义未涉及评论功能）。`utils/SimpleRedisLock` 与 `utils/ILock` 在第5章被 Redisson 取代后已无人调用，作为第4章的产物保留。
+**讲义之外自行补的两处**（没有前端可对照，URL 是按 REST 惯例设计的，改路径前先确认前端）：
+
+- `POST /user/logout` —— 讲义与参考实现都没实现，现按「删掉 Redis 里的 `login:token:{token}`」实现。它在 `MvcConfig` 的拦截范围内，**必须先登录才能登出**；带空 token 也返回成功。
+- `/blog-comments/**` 评论功能 —— `BlogCommentsController` 原本是空类。现在提供 `POST /blog-comments`（新增）、`GET /blog-comments/{id}`（单条）、`GET /blog-comments/of/blog/{blogId}?current=1`（按笔记分页，时间倒序，只取 `status = 0`）、`PUT /blog-comments`（改自己的）、`DELETE /blog-comments/{id}`（删自己的）。写操作校验归属，且同步维护 `tb_blog.comments` 计数（用 `IFNULL(comments,0)±1`，因为该列可为 NULL）。**注意 `BlogComments` 实体没有 name/icon 之类的前端展示字段**，返回的是裸实体，要展示昵称头像需自行加 `@TableField(exist = false)` 字段。
+
+`utils/SimpleRedisLock` 与 `utils/ILock` 在第5章被 Redisson 取代后已无人调用，作为第4章的产物保留。
 
 **`AopContext.currentProxy()` 的前提**：项目里所有靠「同类内部调用走代理」来让 `@Transactional` 生效的写法，都依赖启动类上的 `@EnableAspectJAutoProxy(exposeProxy = true)`。删掉这个注解会让 `currentProxy()` 直接抛 `IllegalStateException`。
 
