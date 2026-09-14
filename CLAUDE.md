@@ -7,17 +7,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 这是《黑马点评》实战课程的**初始骨架工程**，不是完成品。大量业务逻辑是 `// TODO` 桩，默认返回 `Result.fail("功能未完成")`。改动前先确认你面对的是桩代码还是已实现代码。
 
 已实现：
+- **第1章 短信登录**：`UserController` 的 `code`/`login`/`me`、`UserServiceImpl`（Redis token 登录）、`utils/LoginInterceptor`、`utils/RefreshTokenInterceptor`、`config/MvcConfig`
 - `ShopController`（基础 CRUD、按类型/名称分页）、`ShopTypeController`、`UploadController`
 - `VoucherController` + `VoucherServiceImpl.addSeckillVoucher/queryVoucherOfShop`（含 `VoucherMapper.xml` 手写联表查询）
 - `BlogController` 的 `queryHotBlog`；`BlogController.saveBlog/likeBlog/queryMyBlog` 只做了最朴素的数据库更新（`liked = liked + 1`），没有点赞去重、没有 Feed 推送
 
 未实现（纯桩）：
-- `UserController` 全部方法（`code`/`login`/`logout`/`me`）—— 登录体系完全没做
+- `UserController.logout` —— 讲义本身没有实现它，参考实现也保留为 TODO
 - `VoucherOrderController.seckillVoucher`（秒杀下单）
 - `FollowController`、`BlogCommentsController` —— 空类
-- `UserServiceImpl`、`ShopServiceImpl`、`BlogServiceImpl`、`FollowServiceImpl`、`VoucherOrderServiceImpl` 等 —— 空壳，只继承 MP 的 `ServiceImpl`
+- `ShopServiceImpl`、`BlogServiceImpl`、`FollowServiceImpl`、`VoucherOrderServiceImpl` 等 —— 空壳，只继承 MP 的 `ServiceImpl`
 
-**关键架构缺口**：`UserHolder`（ThreadLocal 保存 `UserDTO`）已经写好，但**没有任何地方往里写值** —— 项目里不存在登录拦截器（没有 `MvcConfig`/`LoginInterceptor`/`RefreshTokenInterceptor`）。所以 `BlogController.saveBlog`、`queryMyBlog` 里的 `UserHolder.getUser().getId()` 目前必然 NPE。实现登录功能时，需要自行补齐「拦截器 + `MvcConfig` 注册 + token 校验 + `UserHolder.saveUser/removeUser`」这条链路。
+**登录链路（第1章已补齐）**：`UserHolder` 由拦截器写入。`RefreshTokenInterceptor` 注册在 `order(0)` 拦截 `/**`，从请求头 `authorization` 取 token → 查 Redis hash → `UserHolder.saveUser` → 刷新 TTL，并在 `afterCompletion` 调 `removeUser()`；`LoginInterceptor` 注册在 `order(1)`，只判断 ThreadLocal 有无用户，无则返回 401。**新增需要登录态的接口，务必确认它没有被 `MvcConfig.excludePathPatterns` 放行，否则拿不到用户。**
 
 ## 常用命令
 
@@ -62,8 +63,8 @@ Key 前缀与 TTL 统一定义在 `RedisConstants`，新增 key 请加到这里�
 
 | 常量 | 值 | 用途 |
 |---|---|---|
-| `LOGIN_CODE_KEY` / `LOGIN_CODE_TTL` | `login:code:` / 2 | 短信验证码 |
-| `LOGIN_USER_KEY` / `LOGIN_USER_TTL` | `login:token:` / 36000 | 登录 token（秒） |
+| `LOGIN_CODE_KEY` / `LOGIN_CODE_TTL` | `login:code:` / 2 | 短信验证码（**分钟**） |
+| `LOGIN_USER_KEY` / `LOGIN_USER_TTL` | `login:token:` / 36000 | 登录 token（**分钟**，即 25 天） |
 | `CACHE_SHOP_KEY` / `CACHE_SHOP_TTL` | `cache:shop:` / 30 | 商铺缓存 |
 | `CACHE_NULL_TTL` | 2 | 缓存空值防穿透 |
 | `LOCK_SHOP_KEY` / `LOCK_SHOP_TTL` | `lock:shop:` / 10 | 商铺缓存互斥锁 |
