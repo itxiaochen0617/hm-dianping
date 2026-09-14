@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **第3章 优惠卷秒杀**：`utils/RedisIdWorker`（时间戳左移 32 位 + Redis 日自增序列号）、`VoucherServiceImpl.addSeckillVoucher` 额外把库存写入 `SECKILL_STOCK_KEY`、`VoucherOrderServiceImpl.seckillVoucher`（校验时间与库存 → `synchronized(userId.intern())` → 代理调用 `createVoucherOrder`）、`HmDianPingApplication` 加了 `@EnableAspectJAutoProxy(exposeProxy = true)`
 - **第4章 分布式锁**：`utils/ILock` + `utils/SimpleRedisLock`（`setIfAbsent` 加锁、value 存 `UUID-线程id` 标示、`resources/unlock.lua` 保证「比标示 + 删锁」原子性）、`VoucherOrderServiceImpl` 的 `synchronized` 换成 `SimpleRedisLock`
 - **第5章 Redisson**：`pom.xml` 新增 `org.redisson:redisson:3.13.6`、`config/RedissonConfig`、`VoucherOrderServiceImpl` 改用 `RLock`（`SimpleRedisLock` 保留在 `utils` 但已无人使用）
+- **第6章 秒杀优化**：`resources/seckill.lua`（原子完成「查库存 + 一人一单 + 扣库存 + 记录用户」）、`VoucherOrderServiceImpl` 改为 `@PostConstruct` 起单线程 + `ArrayBlockingQueue` 异步落库；`IVoucherOrderService` 收窄为只剩 `seckillVoucher`，`createVoucherOrder` 变成私有方法（**从线程池线程调用，脱离 Spring 事务上下文，所以它上面没有也不该有 `@Transactional`**）
 - `ShopController`（基础 CRUD、按类型/名称分页）、`ShopTypeController`、`UploadController`
 - `VoucherController` + `VoucherServiceImpl.addSeckillVoucher/queryVoucherOfShop`（含 `VoucherMapper.xml` 手写联表查询）
 - `BlogController` 的 `queryHotBlog`；`BlogController.saveBlog/likeBlog/queryMyBlog` 只做了最朴素的数据库更新（`liked = liked + 1`），没有点赞去重、没有 Feed 推送
@@ -75,11 +76,13 @@ Key 前缀与 TTL 统一定义在 `RedisConstants`，新增 key 请加到这里�
 | `CACHE_SHOP_KEY` / `CACHE_SHOP_TTL` | `cache:shop:` / 30 | 商铺缓存 |
 | `CACHE_NULL_TTL` | 2 | 缓存空值防穿透 |
 | `LOCK_SHOP_KEY` / `LOCK_SHOP_TTL` | `lock:shop:` / 10 | 商铺缓存互斥锁（`CacheClient` 内部用） |
-| `SECKILL_STOCK_KEY` | `seckill:stock:` | 秒杀库存 |
+| `SECKILL_STOCK_KEY` | `seckill:stock:` | 秒杀库存（第6章起由 `seckill.lua` 直接拼 key 使用） |
 | `BLOG_LIKED_KEY` | `blog:liked:` | 点赞 Set |
 | `FEED_KEY` | `feed:` | 关注 Feed 收件箱 |
 | `SHOP_GEO_KEY` | `shop:geo:` | 店铺 GEO |
 | `USER_SIGN_KEY` | `sign:` | 签到 BitMap |
+
+注意 `seckill:order:{voucherId}` 这个「已下单用户」Set 的 key **只硬编码在 `seckill.lua` 里**，`RedisConstants` 中没有对应常量。
 
 `utils/RedisData`（`expireTime` + `data`）是为**逻辑过期**缓存方案预留的载体，目前无人使用。
 
