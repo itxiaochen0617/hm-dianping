@@ -17,6 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **第8章 达人探店**：`BlogServiceImpl` 承载原 `BlogController` 里的大部分逻辑（`saveBlog` / `queryHotBlog` / `queryBlogById` / `likeBlog` / `queryBlogLikes` / `isBlogLiked` / `queryBlogUser`），控制器改为瘦转发；点赞用 `BLOG_LIKED_KEY` 的 **ZSet**（score = 点赞时间戳）实现去重 + 排行榜 `zrange 0 4`
 - **第9章 好友关注**：`FollowServiceImpl`（关注/取关同步维护 `follows:{userId}` Set、`followCommons` 用 `SINTER` 求共同关注）、`BlogServiceImpl.saveBlog` 写扩散推送笔记到粉丝 `FEED_KEY` ZSet、`queryBlogOfFollow` 滚动分页（`reverseRangeByScoreWithScores` + 返回 `ScrollResult`）；新增 `/blog/of/follow`、`/blog/of/user`、`/user/{id}`
 - **第10章 附近商户**：`ShopServiceImpl.queryShopByType` 支持按 `x`/`y` 坐标走 Redis GEO（`GEOSEARCH` + `includeDistance` + 内存分页），无坐标时回退到数据库分页；测试类新增 `loadShopData()` 按 `typeId` 分组把店铺灌进 `SHOP_GEO_KEY`
+- **第11章 用户签到**：`UserServiceImpl.sign()` 用 `SETBIT` 按 `sign:{userId}:yyyyMM` 逐日置位、`signCount()` 用 `BITFIELD GET u{dayOfMonth} 0` 取出本月位图后靠 `& 1` + 右移数连续 1，新增 `/user/sign`、`/user/sign/count`
 
 **Stream 消费组必须先手工创建**：`VoucherOrderServiceImpl` 只做 `XREADGROUP`，不做 `XGROUP CREATE`。首次跑之前需要在 redis-cli 执行 `XGROUP CREATE stream.orders g1 0 MKSTREAM`，否则消费线程会一直报 `NOGROUP No such key`。
 - `ShopController`（基础 CRUD、按类型/名称分页）、`ShopTypeController`、`UploadController`

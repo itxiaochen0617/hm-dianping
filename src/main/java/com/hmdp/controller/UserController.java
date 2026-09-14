@@ -85,6 +85,22 @@ public class UserController {
     }
 
     /**
+     * 用户签到
+     */
+    @PostMapping("/sign")
+    public Result sign() {
+        return userService.sign();
+    }
+
+    /**
+     * 统计本月连续签到天数
+     */
+    @GetMapping("/sign/count")
+    public Result signCount() {
+        return userService.signCount();
+    }
+
+    /**
      * 根据id查询用户（用于达人主页展示博主信息）
      */
     @GetMapping("/{id}")
