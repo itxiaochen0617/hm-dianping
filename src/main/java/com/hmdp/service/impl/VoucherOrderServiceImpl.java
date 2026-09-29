@@ -24,6 +24,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import javax.annotation.Resource;
 import java.time.Duration;
 import java.util.Collections;
@@ -67,8 +68,18 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         SECKILL_SCRIPT.setResultType(Long.class);
     }
 
-    // 单线程异步消费者：串行消费 Stream 中的订单，避免并发落库造成重复下单
-    private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor();
+    // 单线程异步消费者：串行消费 Stream 中的订单，避免并发落库造成重复下单。
+    // 用 daemon 线程：万一关停逻辑失效，也不会把 JVM 挂住
+    private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "seckill-order-consumer");
+        t.setDaemon(true);
+        return t;
+    });
+
+    // 消费线程的运行标志。容器关停时置为 false 让循环及时退出。
+    // 不这样做的话，线程会继续拿着已销毁的 LettuceConnectionFactory 反复报错，
+    // 而且因为是非守护线程，JVM 根本退不出去
+    private volatile boolean running = true;
 
     // 是否启用秒杀订单消费者。Redis 低于 5.0 时没有 Stream，消费线程会持续报错，
     // 此时可在配置里设为 false 关掉它（本机 Redis 3.2 就是这么用的）
@@ -85,11 +96,19 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         SECKILL_ORDER_EXECUTOR.submit(new VoucherOrderHandler());
     }
 
+    // 容器关停时停止消费线程
+    @PreDestroy
+    public void destroy() {
+        running = false;
+        SECKILL_ORDER_EXECUTOR.shutdownNow();
+        log.info("正在停止秒杀订单消费者...");
+    }
+
     private class VoucherOrderHandler implements Runnable {
 
         @Override
         public void run() {
-            while (true) {
+            while (running) {
                 try {
                     // 1.获取消息队列中的订单信息 XREADGROUP GROUP g1 c1 COUNT 1 BLOCK 2000 STREAMS stream.orders >
                     List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
@@ -111,6 +130,10 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     // 5.确认消息 XACK
                     stringRedisTemplate.opsForStream().acknowledge(STREAM_ORDERS, GROUP_NAME, record.getId());
                 } catch (Exception e) {
+                    if (!running) {
+                        // 关停中：连接工厂已销毁，这里报错属预期，不记日志
+                        break;
+                    }
                     log.error("处理订单异常", e);
                     // 处理异常消息
                     handlePendingList();
@@ -130,7 +153,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             // 连续失败计数：读 pending-list 本身一直失败（比如 Redis 不支持 Stream），
             // 说明是环境问题而不是某条消息的问题，重试几次就放弃，否则会无限刷日志
             int failCount = 0;
-            while (true) {
+            while (running) {
                 try {
                     // 1.获取pending-list中的订单信息 XREADGROUP GROUP g1 c1 COUNT 1 STREAMS stream.orders 0
                     List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
@@ -152,6 +175,10 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     // 5.确认消息 XACK
                     stringRedisTemplate.opsForStream().acknowledge(STREAM_ORDERS, GROUP_NAME, record.getId());
                 } catch (Exception e) {
+                    if (!running) {
+                        // 关停中，直接退出
+                        break;
+                    }
                     if (++failCount >= 3) {
                         log.error("pending-list 连续 {} 次处理失败，放弃本轮补偿（检查 Redis 是否支持 Stream、消费组是否已创建）", failCount);
                         break;
