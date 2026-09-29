@@ -12,6 +12,7 @@ import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
@@ -69,9 +70,18 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     // 单线程异步消费者：串行消费 Stream 中的订单，避免并发落库造成重复下单
     private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor();
 
+    // 是否启用秒杀订单消费者。Redis 低于 5.0 时没有 Stream，消费线程会持续报错，
+    // 此时可在配置里设为 false 关掉它（本机 Redis 3.2 就是这么用的）
+    @Value("${hmdp.seckill.consumer-enabled:true}")
+    private boolean consumerEnabled;
+
     // 类初始化完成后就拉起后台消费线程
     @PostConstruct
     private void init() {
+        if (!consumerEnabled) {
+            log.warn("秒杀订单消费者未启用（hmdp.seckill.consumer-enabled=false），秒杀下单不会异步落库");
+            return;
+        }
         SECKILL_ORDER_EXECUTOR.submit(new VoucherOrderHandler());
     }
 
@@ -104,11 +114,22 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     log.error("处理订单异常", e);
                     // 处理异常消息
                     handlePendingList();
+                    // 退避 1 秒：Redis 持续报错时（版本不支持 Stream、网络断、消费组没建），
+                    // 不退避会形成每秒几十次的紧循环，日志瞬间涨到几百 MB
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
                 }
             }
         }
 
         private void handlePendingList() {
+            // 连续失败计数：读 pending-list 本身一直失败（比如 Redis 不支持 Stream），
+            // 说明是环境问题而不是某条消息的问题，重试几次就放弃，否则会无限刷日志
+            int failCount = 0;
             while (true) {
                 try {
                     // 1.获取pending-list中的订单信息 XREADGROUP GROUP g1 c1 COUNT 1 STREAMS stream.orders 0
@@ -131,11 +152,16 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     // 5.确认消息 XACK
                     stringRedisTemplate.opsForStream().acknowledge(STREAM_ORDERS, GROUP_NAME, record.getId());
                 } catch (Exception e) {
+                    if (++failCount >= 3) {
+                        log.error("pending-list 连续 {} 次处理失败，放弃本轮补偿（检查 Redis 是否支持 Stream、消费组是否已创建）", failCount);
+                        break;
+                    }
                     log.error("处理pending-list订单异常", e);
                     try {
-                        Thread.sleep(20);
+                        Thread.sleep(200);
                     } catch (InterruptedException ex) {
                         Thread.currentThread().interrupt();
+                        break;
                     }
                 }
             }
