@@ -28,7 +28,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `utils/SimpleRedisLock` 与 `utils/ILock` 在第5章被 Redisson 取代后已无人调用，作为第4章的产物保留。
 
-**`AopContext.currentProxy()` 的前提**：项目里所有靠「同类内部调用走代理」来让 `@Transactional` 生效的写法，都依赖启动类上的 `@EnableAspectJAutoProxy(exposeProxy = true)`。删掉这个注解会让 `currentProxy()` 直接抛 `IllegalStateException`。
+**`@EnableAspectJAutoProxy` 已被移除（不要再加回来）**：第 3 章为了 `AopContext.currentProxy()` 在启动类上加过它，但第 6 章改用 Lua + Stream 后 `currentProxy()` 就没有调用点了。而**这个注解会让应用启动失败**——它需要 AspectJ 运行时（`org.aspectj.lang.annotation.Pointcut`），而 `pom.xml` 里没有 AOP 依赖，报 `NoClassDefFoundError`。编译期发现不了，只有启动时才暴露。
+
+`@Transactional` 不受影响：Spring Boot 的 `TransactionAutoConfiguration` 会自动开启事务管理，走的是不依赖 AspectJ 的 `InfrastructureAdvisorAutoProxyCreator`。项目里 4 处 `@Transactional` 在没有这个注解的情况下正常工作。
+
+若将来确实需要用 `AopContext.currentProxy()`，得先往 `pom.xml` 加 `spring-boot-starter-aop`，再加回注解。
 
 **登录链路（第1章已补齐）**：`UserHolder` 由拦截器写入。`RefreshTokenInterceptor` 注册在 `order(0)` 拦截 `/**`，从请求头 `authorization` 取 token → 查 Redis hash → `UserHolder.saveUser` → 刷新 TTL，并在 `afterCompletion` 调 `removeUser()`；`LoginInterceptor` 注册在 `order(1)`，只判断 ThreadLocal 有无用户，无则返回 401。**新增需要登录态的接口，务必确认它没有被 `MvcConfig.excludePathPatterns` 放行，否则拿不到用户。**
 
