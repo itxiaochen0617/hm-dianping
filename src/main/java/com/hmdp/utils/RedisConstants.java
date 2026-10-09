@@ -19,4 +19,10 @@ public class RedisConstants {
     public static final String FEED_KEY = "feed:";
     public static final String SHOP_GEO_KEY = "shop:geo:";
     public static final String USER_SIGN_KEY = "sign:";
+
+    /**
+     * 限流 key 前缀。完整 key 形如 rate:{规则名}:{用户id 或 IP}，
+     * 例如 rate:seckill:1013、rate:api:127.0.0.1
+     */
+    public static final String RATE_LIMIT_KEY = "rate:";
 }
