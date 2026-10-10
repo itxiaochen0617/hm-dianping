@@ -66,6 +66,12 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             // 短信验证码：固定窗口 5 次/分钟，按 IP（防短信轰炸）
             RateLimitRule.fixedWindow("code",
                     "/user/code", RateLimitRule.Dimension.IP, 5, 60),
+            // 智能客服：固定窗口 10 次/分钟，按用户（未登录自动降级 IP）。
+            // ⚠️ 占位值，未经压测。聊天接口单次成本是普通接口的几十倍，
+            //    而且一次请求最多触发 maxRounds+1 次上游调用，阈值必须显著低于全局兜底。
+            //    注意 /chat/** 会同时命中这条和下面的 api 兜底规则——这是刻意的双层限流
+            RateLimitRule.fixedWindow("chat",
+                    "/chat/**", RateLimitRule.Dimension.USER, 10, 60),
             // 全局兜底：固定窗口 100 次/秒，按 IP
             RateLimitRule.fixedWindow("api",
                     "/**", RateLimitRule.Dimension.IP, 100, 1)

@@ -8,6 +8,7 @@ import com.hmdp.mapper.VoucherOrderMapper;
 import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
 import com.hmdp.utils.RedisIdWorker;
+import com.hmdp.utils.SystemConstants;
 import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
@@ -236,6 +237,39 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             // 释放锁
             redisLock.unlock();
         }
+    }
+
+    /**
+     * 查某个用户最近的订单（智能客服工具用）。
+     * <p>
+     * 直接用 MP 的链式 API，不需要动 {@link VoucherOrderMapper}（它是空的 BaseMapper）
+     */
+    @Override
+    public List<VoucherOrder> listMyOrders(Long userId, int limit) {
+        if (userId == null) {
+            return Collections.emptyList();
+        }
+        // 双重钳制：调用方给什么都不会超过 MAX_PAGE_SIZE。safe 是 int，
+        // 拼进 last() 不存在 SQL 注入面
+        int safe = Math.max(1, Math.min(limit, SystemConstants.MAX_PAGE_SIZE));
+        return query().eq("user_id", userId)
+                .orderByDesc("create_time")
+                .last("LIMIT " + safe)
+                .list();
+    }
+
+    /**
+     * 查某个用户自己的某一笔订单（智能客服工具用）。
+     * <p>
+     * ⚠️ {@code user_id} 条件写在 WHERE 里，而不是"查出来再比较 userId"——
+     * 数据库层面就不可能返回别人的行，也就不存在"忘了比较"的漏洞
+     */
+    @Override
+    public VoucherOrder getMyOrder(Long userId, Long orderId) {
+        if (userId == null || orderId == null) {
+            return null;
+        }
+        return query().eq("id", orderId).eq("user_id", userId).one();
     }
 
     @Override

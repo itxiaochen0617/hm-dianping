@@ -25,4 +25,14 @@ public class RedisConstants {
      * 例如 rate:seckill:1013、rate:api:127.0.0.1
      */
     public static final String RATE_LIMIT_KEY = "rate:";
+
+    /**
+     * 智能客服会话历史。完整 key 形如 chat:memory:{userId}:{sessionId}。
+     * <p>
+     * ⚠️ userId 前缀由服务端强制加上（见 {@code ChatMemory}），不能直接用客户端传的
+     * sessionId 当 key，否则是水平越权。保留的历史条数由 {@code hmdp.ai.max-history}
+     * 配置驱动，所以这里不放长度常量
+     */
+    public static final String CHAT_MEMORY_KEY = "chat:memory:";
+    public static final Long CHAT_MEMORY_TTL = 30L;
 }
