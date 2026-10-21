@@ -37,3 +37,6 @@ src/main/resources/application.yaml
 
 ### Local notes (not for the repo) ###
 4-kind-scott.md
+优化改造清单.md
+架构分析.md
+秒杀链路分析.md
