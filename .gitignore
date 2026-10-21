@@ -34,3 +34,6 @@ build/
 
 ### Local config (contains DB/Redis credentials) ###
 src/main/resources/application.yaml
+
+### Local notes (not for the repo) ###
+4-kind-scott.md
